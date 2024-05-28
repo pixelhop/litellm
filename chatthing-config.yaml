@@ -55,7 +55,7 @@ model_list:
     litellm_params:
       model: mistral/open-mixtral-8x7b
       api_key: os.environ/MISTRAL_API_KEY
-  - model_name: mistral/open-mixtral-8x22b
+  - model_name: open-mixtral-8x22b
     litellm_params:
       model: mistral/open-mixtral-8x22b
       api_key: os.environ/MISTRAL_API_KEY
