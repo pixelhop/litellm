@@ -54,7 +54,7 @@ model_list:
     litellm_params:
       model: mistral/open-mixtral-8x7b
       api_key: os.environ/MISTRAL_API_KEY
-  - model_name: mistral/open-mixtral-8x22b
+  - model_name: open-mixtral-8x22b
     litellm_params:
       model: mistral/open-mixtral-8x22b
       api_key: os.environ/MISTRAL_API_KEY
@@ -66,7 +66,7 @@ model_list:
     litellm_params:
       model: mistral/mistral-medium-latest
       api_key: os.environ/MISTRAL_API_KEY
-  - model_name: mistral-large-latest
+  - model_name: mistral-large
     litellm_params:
       model: mistral/mistral-large-latest
       api_key: os.environ/MISTRAL_API_KEY
@@ -78,8 +78,6 @@ model_list:
     litellm_params: 
       model: openai/text-embedding-ada-002
       api_key: os.environ/OPENAI_API_KEY
-      # api_base: https://openai-gpt-4-test-v-1.openai.azure.com/
-      # api_version: "2023-05-15"
     model_info:
       mode: embedding
       base_model: text-embedding-ada-002
