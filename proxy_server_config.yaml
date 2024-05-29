@@ -83,7 +83,7 @@ litellm_settings:
   # max_budget: 100 
   # budget_duration: 30d
   modify_params: True
-  set_verbose: True
+  set_verbose: false
   num_retries: 5
   request_timeout: 600
   telemetry: False
