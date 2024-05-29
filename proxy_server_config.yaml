@@ -66,7 +66,7 @@ model_list:
     litellm_params:
       model: mistral/mistral-medium-latest
       api_key: os.environ/MISTRAL_API_KEY
-  - model_name: mistral-large-latest
+  - model_name: mistral-large
     litellm_params:
       model: mistral/mistral-large-latest
       api_key: os.environ/MISTRAL_API_KEY
@@ -74,23 +74,16 @@ model_list:
     litellm_params: 
       model: openai/text-embedding-ada-002
       api_key: os.environ/OPENAI_API_KEY
-  - model_name: text-embedding-ada-002
-    litellm_params: 
-      model: openai/text-embedding-ada-002
-      api_key: os.environ/OPENAI_API_KEY
-      # api_base: https://openai-gpt-4-test-v-1.openai.azure.com/
-      # api_version: "2023-05-15"
     model_info:
       mode: embedding
       base_model: text-embedding-ada-002
 
 litellm_settings:
-  # set_verbose: True  # Uncomment this if you want to see verbose logs; not recommended in production
   drop_params: True
   # max_budget: 100 
   # budget_duration: 30d
   modify_params: True
-  set_verbose: False
+  set_verbose: True
   num_retries: 5
   request_timeout: 600
   telemetry: False
