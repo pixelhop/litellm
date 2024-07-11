@@ -11,3 +11,5 @@ git checkout staging
 git fetch upstream
 git merge upstream/main
 ```
+
+Often you will need to fix conflicts in the configs
