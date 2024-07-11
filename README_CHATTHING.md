@@ -12,4 +12,12 @@ git fetch upstream
 git merge upstream/main
 ```
 
-Often you will need to fix conflicts in the configs
+Often you will need to fix conflicts in the configs.
+
+Verify everything is still working by running:
+
+```
+docker-compose up
+```
+
+and testing the API
