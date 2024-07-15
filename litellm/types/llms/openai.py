@@ -1,28 +1,37 @@
+from os import PathLike
 from typing import (
-    Optional,
-    Union,
+    IO,
     Any,
     BinaryIO,
-    Literal,
     Iterable,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Tuple,
+    TypedDict,
+    Union,
 )
-from typing_extensions import override, Required, Dict
-from pydantic import BaseModel
 
-from openai.types.beta.threads.message_content import MessageContent
-from openai.types.beta.threads.message import Message as OpenAIMessage
+from openai._legacy_response import HttpxBinaryResponseContent
+from openai.lib.streaming._assistants import (
+    AssistantEventHandler,
+    AssistantStreamManager,
+    AsyncAssistantEventHandler,
+    AsyncAssistantStreamManager,
+)
+from openai.pagination import AsyncCursorPage, SyncCursorPage
+from openai.types import Batch, FileObject
+from openai.types.beta.assistant import Assistant
+from openai.types.beta.assistant_tool_param import AssistantToolParam
 from openai.types.beta.thread_create_params import (
     Message as OpenAICreateThreadParamsMessage,
 )
-from openai.types.beta.assistant_tool_param import AssistantToolParam
+from openai.types.beta.threads.message import Message as OpenAIMessage
+from openai.types.beta.threads.message_content import MessageContent
 from openai.types.beta.threads.run import Run
-from openai.types.beta.assistant import Assistant
-from openai.pagination import SyncCursorPage
-from os import PathLike
-from openai.types import FileObject, Batch
-from openai._legacy_response import HttpxBinaryResponseContent
-
-from typing import TypedDict, List, Optional, Tuple, Mapping, IO
+from pydantic import BaseModel
+from typing_extensions import Dict, Required, override
 
 FileContent = Union[IO[bytes], bytes, PathLike]
 
@@ -138,9 +147,43 @@ class Attachment(TypedDict, total=False):
     """The tools to add this file to."""
 
 
+class ImageFileObject(TypedDict):
+    file_id: Required[str]
+    detail: Optional[str]
+
+
+class ImageURLObject(TypedDict):
+    url: Required[str]
+    detail: Optional[str]
+
+
+class MessageContentTextObject(TypedDict):
+    type: Required[Literal["text"]]
+    text: str
+
+
+class MessageContentImageFileObject(TypedDict):
+    type: Literal["image_file"]
+    image_file: ImageFileObject
+
+
+class MessageContentImageURLObject(TypedDict):
+    type: Required[str]
+    image_url: ImageURLObject
+
+
 class MessageData(TypedDict):
     role: Literal["user", "assistant"]
-    content: str
+    content: Union[
+        str,
+        List[
+            Union[
+                MessageContentTextObject,
+                MessageContentImageFileObject,
+                MessageContentImageURLObject,
+            ]
+        ],
+    ]
     attachments: Optional[List[Attachment]]
     metadata: Optional[dict]
 
@@ -214,7 +257,7 @@ class CreateBatchRequest(TypedDict, total=False):
     """
 
     completion_window: Literal["24h"]
-    endpoint: Literal["/v1/chat/completions", "/v1/embeddings", "/v1/completions"]
+    endpoint: Literal["/v1/chat/completions", "/v1/embeddings"]
     input_file_id: str
     metadata: Optional[Dict[str, str]]
     extra_headers: Optional[Dict[str, str]]
@@ -255,3 +298,147 @@ class ListBatchRequest(TypedDict, total=False):
     extra_headers: Optional[Dict[str, str]]
     extra_body: Optional[Dict[str, str]]
     timeout: Optional[float]
+
+
+class ChatCompletionToolCallFunctionChunk(TypedDict, total=False):
+    name: Optional[str]
+    arguments: str
+
+
+class ChatCompletionAssistantToolCall(TypedDict):
+    id: Optional[str]
+    type: Literal["function"]
+    function: ChatCompletionToolCallFunctionChunk
+
+
+class ChatCompletionToolCallChunk(TypedDict):  # result of /chat/completions call
+    id: Optional[str]
+    type: Literal["function"]
+    function: ChatCompletionToolCallFunctionChunk
+    index: int
+
+
+class ChatCompletionDeltaToolCallChunk(TypedDict, total=False):
+    id: str
+    type: Literal["function"]
+    function: ChatCompletionToolCallFunctionChunk
+    index: int
+
+
+class ChatCompletionTextObject(TypedDict):
+    type: Literal["text"]
+    text: str
+
+
+class ChatCompletionImageUrlObject(TypedDict, total=False):
+    url: Required[str]
+    detail: str
+
+
+class ChatCompletionImageObject(TypedDict):
+    type: Literal["image_url"]
+    image_url: ChatCompletionImageUrlObject
+
+
+class ChatCompletionUserMessage(TypedDict):
+    role: Literal["user"]
+    content: Union[
+        str, Iterable[Union[ChatCompletionTextObject, ChatCompletionImageObject]]
+    ]
+
+
+class ChatCompletionAssistantMessage(TypedDict, total=False):
+    role: Required[Literal["assistant"]]
+    content: Optional[str]
+    name: str
+    tool_calls: List[ChatCompletionAssistantToolCall]
+
+
+class ChatCompletionToolMessage(TypedDict):
+    role: Literal["tool"]
+    content: str
+    tool_call_id: str
+
+
+class ChatCompletionSystemMessage(TypedDict, total=False):
+    role: Required[Literal["system"]]
+    content: Required[str]
+    name: str
+
+
+AllMessageValues = Union[
+    ChatCompletionUserMessage,
+    ChatCompletionAssistantMessage,
+    ChatCompletionToolMessage,
+    ChatCompletionSystemMessage,
+]
+
+
+class ChatCompletionToolChoiceFunctionParam(TypedDict):
+    name: str
+
+
+class ChatCompletionToolChoiceObjectParam(TypedDict):
+    type: Literal["function"]
+    function: ChatCompletionToolChoiceFunctionParam
+
+
+ChatCompletionToolChoiceStringValues = Literal["none", "auto", "required"]
+
+ChatCompletionToolChoiceValues = Union[
+    ChatCompletionToolChoiceStringValues, ChatCompletionToolChoiceObjectParam
+]
+
+
+class ChatCompletionToolParamFunctionChunk(TypedDict, total=False):
+    name: Required[str]
+    description: str
+    parameters: dict
+
+
+class ChatCompletionToolParam(TypedDict):
+    type: Literal["function"]
+    function: ChatCompletionToolParamFunctionChunk
+
+
+class ChatCompletionRequest(TypedDict, total=False):
+    model: Required[str]
+    messages: Required[List[AllMessageValues]]
+    frequency_penalty: float
+    logit_bias: dict
+    logprobs: bool
+    top_logprobs: int
+    max_tokens: int
+    n: int
+    presence_penalty: float
+    response_format: dict
+    seed: int
+    service_tier: str
+    stop: Union[str, List[str]]
+    stream_options: dict
+    temperature: float
+    top_p: float
+    tools: List[ChatCompletionToolParam]
+    tool_choice: ChatCompletionToolChoiceValues
+    parallel_tool_calls: bool
+    function_call: Union[str, dict]
+    functions: List
+    user: str
+
+
+class ChatCompletionDeltaChunk(TypedDict, total=False):
+    content: Optional[str]
+    tool_calls: List[ChatCompletionDeltaToolCallChunk]
+    role: str
+
+
+class ChatCompletionResponseMessage(TypedDict, total=False):
+    content: Optional[str]
+    tool_calls: List[ChatCompletionToolCallChunk]
+    role: Literal["assistant"]
+
+
+class ChatCompletionUsageBlock(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
