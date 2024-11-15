@@ -90,7 +90,7 @@ model_list:
     litellm_params:
       model: mistral/mistral-medium-latest
       api_key: os.environ/MISTRAL_API_KEY
-  - model_name: mistral-large-latest
+  - model_name: mistral-large
     litellm_params:
       model: mistral/mistral-large-latest
       api_key: os.environ/MISTRAL_API_KEY
@@ -116,7 +116,7 @@ litellm_settings:
   # max_budget: 100 
   # budget_duration: 30d
   modify_params: True
-  set_verbose: True
+  set_verbose: False
   num_retries: 5
   request_timeout: 600
   telemetry: False
