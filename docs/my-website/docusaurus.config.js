@@ -11,7 +11,7 @@ const config = {
   favicon: '/img/favicon.ico', 
 
   // Set the production url of your site here
-  url: 'https://litellm.vercel.app/',
+  url: 'https://docs.litellm.ai/',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
@@ -26,7 +26,6 @@ const config = {
     defaultLocale: 'en',
     locales: ['en'],
   },
-
   plugins: [
     [
       '@docusaurus/plugin-ideal-image',
@@ -116,6 +115,11 @@ const config = {
             position: 'left',
             label: '🚀 Hosted',
             to: "docs/hosted"
+          },
+          {
+            href: 'https://models.litellm.ai/',
+            label: '💸 LLM Model Cost Map',
+            position: 'right',
           },
           {
             href: 'https://github.com/BerriAI/litellm',

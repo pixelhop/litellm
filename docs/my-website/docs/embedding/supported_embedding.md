@@ -84,6 +84,60 @@ print(query_result[:5])
 </TabItem>
 </Tabs>
 
+
+## Image Embeddings
+
+For models that support image embeddings, you can pass in a base64 encoded image string to the `input` param.
+
+<Tabs>
+<TabItem value="sdk" label="SDK">
+
+```python
+from litellm import embedding
+import os
+
+# set your api key
+os.environ["COHERE_API_KEY"] = ""
+
+response = embedding(model="cohere/embed-english-v3.0", input=["<base64 encoded image>"])
+```
+
+</TabItem>
+<TabItem value="proxy" label="PROXY">
+
+1. Setup config.yaml 
+
+```yaml
+model_list:
+  - model_name: cohere-embed
+    litellm_params:
+      model: cohere/embed-english-v3.0
+      api_key: os.environ/COHERE_API_KEY
+```
+
+
+2. Start proxy
+
+```bash
+litellm --config /path/to/config.yaml 
+
+# RUNNING on http://0.0.0.0:4000
+```
+
+3. Test it!
+
+```bash
+curl -X POST 'http://0.0.0.0:4000/v1/embeddings' \
+-H 'Authorization: Bearer sk-54d77cd67b9febbb' \
+-H 'Content-Type: application/json' \
+-d '{
+  "model": "cohere/embed-english-v3.0",
+  "input": ["<base64 encoded image>"]
+}'
+```
+</TabItem>
+</Tabs>
+
 ## Input Params for `litellm.embedding()`
 
 
@@ -270,7 +324,7 @@ response = embedding(
 | embed-multilingual-v2.0  | `embedding(model="embed-multilingual-v2.0", input=["good morning from litellm", "this is another item"])` |
 
 ## HuggingFace Embedding Models
-LiteLLM supports all Feature-Extraction Embedding models: https://huggingface.co/models?pipeline_tag=feature-extraction
+LiteLLM supports all Feature-Extraction + Sentence Similarity Embedding models: https://huggingface.co/models?pipeline_tag=feature-extraction
 
 ### Usage
 ```python
@@ -282,6 +336,25 @@ response = embedding(
     input=["good morning from litellm"]
 )
 ```
+
+### Usage - Set input_type
+
+LiteLLM infers input type (feature-extraction or sentence-similarity) by making a GET request to the api base. 
+
+Override this, by setting the `input_type` yourself.
+
+```python
+from litellm import embedding
+import os
+os.environ['HUGGINGFACE_API_KEY'] = ""
+response = embedding(
+    model='huggingface/microsoft/codebert-base', 
+    input=["good morning from litellm", "you are a good bot"],
+    api_base = "https://p69xlsj6rpno5drq.us-east-1.aws.endpoints.huggingface.cloud", 
+    input_type="sentence-similarity"
+)
+```
+
 ### Usage - Custom API Base
 ```python
 from litellm import embedding

@@ -297,7 +297,7 @@ def handle_prediction_response_streaming(prediction_url, api_token, print_verbos
             if "output" in response_data:
                 try:
                     output_string = "".join(response_data["output"])
-                except Exception as e:
+                except Exception:
                     raise ReplicateError(
                         status_code=422,
                         message="Unable to parse response. Got={}".format(
@@ -344,7 +344,7 @@ async def async_handle_prediction_response_streaming(
             if "output" in response_data:
                 try:
                     output_string = "".join(response_data["output"])
-                except Exception as e:
+                except Exception:
                     raise ReplicateError(
                         status_code=422,
                         message="Unable to parse response. Got={}".format(
@@ -387,8 +387,8 @@ def process_response(
         result = " "
 
     ## Building RESPONSE OBJECT
-    if len(result) > 1:
-        model_response["choices"][0]["message"]["content"] = result
+    if len(result) >= 1:
+        model_response.choices[0].message.content = result  # type: ignore
 
     # Calculate usage
     prompt_tokens = len(encoding.encode(prompt, disallowed_special=()))
@@ -398,7 +398,7 @@ def process_response(
             disallowed_special=(),
         )
     )
-    model_response["model"] = "replicate/" + model
+    model_response.model = "replicate/" + model
     usage = Usage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
@@ -479,7 +479,7 @@ def completion(
     else:
         input_data = {"prompt": prompt, **optional_params}
 
-    if acompletion is not None and acompletion == True:
+    if acompletion is not None and acompletion is True:
         return async_completion(
             model_response=model_response,
             model=model,
@@ -498,7 +498,7 @@ def completion(
     ## Step1: Start Prediction: gets a prediction url
     ## Step2: Poll prediction url for response
     ## Step2: is handled with and without streaming
-    model_response["created"] = int(
+    model_response.created = int(
         time.time()
     )  # for pricing this must remain right before calling api
 
@@ -513,7 +513,7 @@ def completion(
     print_verbose(prediction_url)
 
     # Handle the prediction response (streaming or non-streaming)
-    if "stream" in optional_params and optional_params["stream"] == True:
+    if "stream" in optional_params and optional_params["stream"] is True:
         print_verbose("streaming request")
         _response = handle_prediction_response_streaming(
             prediction_url, api_key, print_verbose
@@ -571,7 +571,7 @@ async def async_completion(
         http_handler=http_handler,
     )
 
-    if "stream" in optional_params and optional_params["stream"] == True:
+    if "stream" in optional_params and optional_params["stream"] is True:
         _response = async_handle_prediction_response_streaming(
             prediction_url, api_key, print_verbose
         )

@@ -7,12 +7,19 @@ Covers Threads, Messages, Assistants.
 
 LiteLLM currently covers: 
 - Create Assistants 
+- Delete Assistants
 - Get Assistants
 - Create Thread
 - Get Thread
 - Add Messages
 - Get Messages
 - Run Thread
+
+
+## **Supported Providers**:
+- [OpenAI](#quick-start)
+- [Azure OpenAI](#azure-openai)
+- [OpenAI-Compatible APIs](#openai-compatible-apis)
 
 ## Quick Start 
 
@@ -26,6 +33,7 @@ Call an existing Assistant.
 
 - Run the Assistant on the Thread to generate a response by calling the model and the tools.
 
+### SDK + PROXY
 <Tabs>
 <TabItem value="sdk" label="SDK">
 
@@ -281,3 +289,57 @@ curl -X POST 'http://0.0.0.0:4000/threads/{thread_id}/runs' \
 </Tabs>
 
 ## [👉 Proxy API Reference](https://litellm-api.up.railway.app/#/assistants)
+
+
+## Azure OpenAI
+
+**config**
+```yaml
+assistant_settings:
+  custom_llm_provider: azure
+  litellm_params: 
+    api_key: os.environ/AZURE_API_KEY
+    api_base: os.environ/AZURE_API_BASE
+```
+
+**curl**
+
+```bash
+curl -X POST "http://localhost:4000/v1/assistants" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-1234" \
+  -d '{
+    "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+    "name": "Math Tutor",
+    "tools": [{"type": "code_interpreter"}],
+    "model": "<my-azure-deployment-name>"
+  }'
+```
+
+## OpenAI-Compatible APIs 
+
+To call openai-compatible Assistants API's (eg. Astra Assistants API), just add `openai/` to the model name: 
+
+
+**config**
+```yaml
+assistant_settings:
+  custom_llm_provider: openai
+  litellm_params: 
+    api_key: os.environ/ASTRA_API_KEY
+    api_base: os.environ/ASTRA_API_BASE
+```
+
+**curl**
+
+```bash
+curl -X POST "http://localhost:4000/v1/assistants" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-1234" \
+  -d '{
+    "instructions": "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
+    "name": "Math Tutor",
+    "tools": [{"type": "code_interpreter"}],
+    "model": "openai/<my-astra-model-name>"
+  }'
+```

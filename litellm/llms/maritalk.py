@@ -1,11 +1,15 @@
-import os, types
 import json
+import os
+import time
+import traceback
+import types
 from enum import Enum
+from typing import Any, Callable, List, Optional
+
 import requests  # type: ignore
-import time, traceback
-from typing import Callable, Optional, List
-from litellm.utils import ModelResponse, Choices, Message, Usage
+
 import litellm
+from litellm.utils import Choices, Message, ModelResponse, Usage
 
 
 class MaritalkError(Exception):
@@ -97,7 +101,7 @@ def completion(
     encoding,
     api_key,
     logging_obj,
-    optional_params=None,
+    optional_params: dict,
     litellm_params=None,
     logger_fn=None,
 ):
@@ -131,7 +135,7 @@ def completion(
         data=json.dumps(data),
         stream=optional_params["stream"] if "stream" in optional_params else False,
     )
-    if "stream" in optional_params and optional_params["stream"] == True:
+    if "stream" in optional_params and optional_params["stream"] is True:
         return response.iter_lines()
     else:
         ## LOGGING
@@ -152,10 +156,10 @@ def completion(
         else:
             try:
                 if len(completion_response["answer"]) > 0:
-                    model_response["choices"][0]["message"]["content"] = (
-                        completion_response["answer"]
-                    )
-            except Exception as e:
+                    model_response.choices[0].message.content = completion_response[  # type: ignore
+                        "answer"
+                    ]
+            except Exception:
                 raise MaritalkError(
                     message=response.text, status_code=response.status_code
                 )
@@ -167,8 +171,8 @@ def completion(
             encoding.encode(model_response["choices"][0]["message"].get("content", ""))
         )
 
-        model_response["created"] = int(time.time())
-        model_response["model"] = model
+        model_response.created = int(time.time())
+        model_response.model = model
         usage = Usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
@@ -181,8 +185,8 @@ def completion(
 def embedding(
     model: str,
     input: list,
-    api_key: Optional[str] = None,
-    logging_obj=None,
+    api_key: Optional[str],
+    logging_obj: Any,
     model_response=None,
     encoding=None,
 ):

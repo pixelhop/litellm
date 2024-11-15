@@ -1,5 +1,18 @@
 # What is this?
 ## Helper utilities
+import os
+from typing import TYPE_CHECKING, Any, List, Literal, Optional, Tuple, Union
+
+import httpx
+
+from litellm._logging import verbose_logger
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Span as _Span
+
+    Span = _Span
+else:
+    Span = Any
 
 
 def map_finish_reason(
@@ -39,3 +52,77 @@ def map_finish_reason(
     elif finish_reason == "content_filtered":
         return "content_filter"
     return finish_reason
+
+
+def remove_index_from_tool_calls(messages, tool_calls):
+    for tool_call in tool_calls:
+        if "index" in tool_call:
+            tool_call.pop("index")
+
+    for message in messages:
+        if "tool_calls" in message:
+            tool_calls = message["tool_calls"]
+            for tool_call in tool_calls:
+                if "index" in tool_call:
+                    tool_call.pop("index")
+
+    return
+
+
+def get_litellm_metadata_from_kwargs(kwargs: dict):
+    """
+    Helper to get litellm metadata from all litellm request kwargs
+    """
+    return kwargs.get("litellm_params", {}).get("metadata", {})
+
+
+# Helper functions used for OTEL logging
+def _get_parent_otel_span_from_kwargs(
+    kwargs: Optional[dict] = None,
+) -> Union[Span, None]:
+    try:
+        if kwargs is None:
+            return None
+        litellm_params = kwargs.get("litellm_params")
+        _metadata = kwargs.get("metadata") or {}
+        if "litellm_parent_otel_span" in _metadata:
+            return _metadata["litellm_parent_otel_span"]
+        elif (
+            litellm_params is not None
+            and litellm_params.get("metadata") is not None
+            and "litellm_parent_otel_span" in litellm_params.get("metadata", {})
+        ):
+            return litellm_params["metadata"]["litellm_parent_otel_span"]
+        elif "litellm_parent_otel_span" in kwargs:
+            return kwargs["litellm_parent_otel_span"]
+        return None
+    except Exception as e:
+        verbose_logger.exception(
+            "Error in _get_parent_otel_span_from_kwargs: " + str(e)
+        )
+        return None
+
+
+def process_response_headers(response_headers: Union[httpx.Headers, dict]) -> dict:
+    from litellm.types.utils import OPENAI_RESPONSE_HEADERS
+
+    openai_headers = {}
+    processed_headers = {}
+    additional_headers = {}
+
+    for k, v in response_headers.items():
+        if k in OPENAI_RESPONSE_HEADERS:  # return openai-compatible headers
+            openai_headers[k] = v
+        if k.startswith(
+            "llm_provider-"
+        ):  # return raw provider headers (incl. openai-compatible ones)
+            processed_headers[k] = v
+        else:
+            additional_headers["{}-{}".format("llm_provider", k)] = v
+
+    additional_headers = {
+        **openai_headers,
+        **processed_headers,
+        **additional_headers,
+    }
+    return additional_headers

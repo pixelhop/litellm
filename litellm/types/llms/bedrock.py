@@ -1,15 +1,17 @@
-from typing import TypedDict, Any, Union, Optional, Literal, List
 import json
-from .openai import ChatCompletionToolCallChunk
+from typing import Any, List, Literal, Optional, TypedDict, Union
+
 from typing_extensions import (
-    Self,
     Protocol,
-    TypeGuard,
-    override,
-    get_origin,
-    runtime_checkable,
     Required,
+    Self,
+    TypeGuard,
+    get_origin,
+    override,
+    runtime_checkable,
 )
+
+from .openai import ChatCompletionToolCallChunk
 
 
 class SystemContentBlock(TypedDict):
@@ -108,6 +110,12 @@ class ToolConfigBlock(TypedDict, total=False):
     toolChoice: Union[str, ToolChoiceValuesBlock]
 
 
+class GuardrailConfigBlock(TypedDict, total=False):
+    guardrailIdentifier: str
+    guardrailVersion: str
+    trace: Literal["enabled", "disabled"]
+
+
 class InferenceConfig(TypedDict, total=False):
     maxTokens: int
     stopSequences: List[str]
@@ -144,6 +152,7 @@ class RequestObject(TypedDict, total=False):
     messages: Required[List[MessageBlock]]
     system: List[SystemContentBlock]
     toolConfig: ToolConfigBlock
+    guardrailConfig: Optional[GuardrailConfigBlock]
 
 
 class GenericStreamingChunk(TypedDict):
@@ -199,3 +208,99 @@ class ServerSentEvent:
     @override
     def __repr__(self) -> str:
         return f"ServerSentEvent(event={self.event}, data={self.data}, id={self.id}, retry={self.retry})"
+
+
+COHERE_EMBEDDING_INPUT_TYPES = Literal[
+    "search_document", "search_query", "classification", "clustering", "image"
+]
+
+
+class CohereEmbeddingRequest(TypedDict, total=False):
+    texts: List[str]
+    images: List[str]
+    input_type: Required[COHERE_EMBEDDING_INPUT_TYPES]
+    truncate: Literal["NONE", "START", "END"]
+    embedding_types: Literal["float", "int8", "uint8", "binary", "ubinary"]
+
+
+class CohereEmbeddingRequestWithModel(CohereEmbeddingRequest):
+    model: Required[str]
+
+
+class CohereEmbeddingResponse(TypedDict):
+    embeddings: List[List[float]]
+    id: str
+    response_type: Literal["embedding_floats"]
+    texts: List[str]
+
+
+class AmazonTitanV2EmbeddingRequest(TypedDict):
+    inputText: str
+    dimensions: int
+    normalize: bool
+
+
+class AmazonTitanV2EmbeddingResponse(TypedDict):
+    embedding: List[float]
+    inputTextTokenCount: int
+
+
+class AmazonTitanG1EmbeddingRequest(TypedDict):
+    inputText: str
+
+
+class AmazonTitanG1EmbeddingResponse(TypedDict):
+    embedding: List[float]
+    inputTextTokenCount: int
+
+
+class AmazonTitanMultimodalEmbeddingConfig(TypedDict):
+    outputEmbeddingLength: Literal[256, 384, 1024]
+
+
+class AmazonTitanMultimodalEmbeddingRequest(TypedDict, total=False):
+    inputText: str
+    inputImage: str
+    embeddingConfig: AmazonTitanMultimodalEmbeddingConfig
+
+
+class AmazonTitanMultimodalEmbeddingResponse(TypedDict):
+    embedding: List[float]
+    inputTextTokenCount: int
+    message: str  # Specifies any errors that occur during generation.
+
+
+AmazonEmbeddingRequest = Union[
+    AmazonTitanMultimodalEmbeddingRequest,
+    AmazonTitanV2EmbeddingRequest,
+    AmazonTitanG1EmbeddingRequest,
+]
+
+
+class AmazonStability3TextToImageRequest(TypedDict, total=False):
+    """
+    Request for Amazon Stability 3 Text to Image API
+
+    Ref here: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-diffusion-3-text-image.html
+    """
+
+    prompt: str
+    aspect_ratio: Literal[
+        "16:9", "1:1", "21:9", "2:3", "3:2", "4:5", "5:4", "9:16", "9:21"
+    ]
+    mode: Literal["image-to-image", "text-to-image"]
+    output_format: Literal["JPEG", "PNG"]
+    seed: int
+    negative_prompt: str
+
+
+class AmazonStability3TextToImageResponse(TypedDict, total=False):
+    """
+    Response for Amazon Stability 3 Text to Image API
+
+    Ref: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-diffusion-3-text-image.html
+    """
+
+    images: List[str]
+    seeds: List[str]
+    finish_reasons: List[str]

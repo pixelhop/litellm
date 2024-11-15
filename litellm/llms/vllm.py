@@ -1,11 +1,15 @@
-import os
 import json
+import os
+import time  # type: ignore
 from enum import Enum
+from typing import Any, Callable
+
+import httpx
 import requests  # type: ignore
-import time, httpx  # type: ignore
-from typing import Callable, Any
+
 from litellm.utils import ModelResponse, Usage
-from .prompt_templates.factory import prompt_factory, custom_prompt
+
+from .prompt_templates.factory import custom_prompt, prompt_factory
 
 llm = None
 
@@ -41,8 +45,8 @@ def completion(
     print_verbose: Callable,
     encoding,
     logging_obj,
+    optional_params: dict,
     custom_prompt_dict={},
-    optional_params=None,
     litellm_params=None,
     logger_fn=None,
 ):
@@ -79,7 +83,7 @@ def completion(
         )
 
     ## COMPLETION CALL
-    if "stream" in optional_params and optional_params["stream"] == True:
+    if "stream" in optional_params and optional_params["stream"] is True:
         return iter(outputs)
     else:
         ## LOGGING
@@ -91,14 +95,14 @@ def completion(
         )
         print_verbose(f"raw model_response: {outputs}")
         ## RESPONSE OBJECT
-        model_response["choices"][0]["message"]["content"] = outputs[0].outputs[0].text
+        model_response.choices[0].message.content = outputs[0].outputs[0].text  # type: ignore
 
         ## CALCULATING USAGE
         prompt_tokens = len(outputs[0].prompt_token_ids)
         completion_tokens = len(outputs[0].outputs[0].token_ids)
 
-        model_response["created"] = int(time.time())
-        model_response["model"] = model
+        model_response.created = int(time.time())
+        model_response.model = model
         usage = Usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
@@ -140,10 +144,7 @@ def batch_completions(
         llm, SamplingParams = validate_environment(model=model)
     except Exception as e:
         error_str = str(e)
-        if "data parallel group is already initialized" in error_str:
-            pass
-        else:
-            raise VLLMError(status_code=0, message=error_str)
+        raise VLLMError(status_code=0, message=error_str)
     sampling_params = SamplingParams(**optional_params)
     prompts = []
     if model in custom_prompt_dict:
@@ -173,14 +174,14 @@ def batch_completions(
     for output in outputs:
         model_response = ModelResponse()
         ## RESPONSE OBJECT
-        model_response["choices"][0]["message"]["content"] = output.outputs[0].text
+        model_response.choices[0].message.content = output.outputs[0].text  # type: ignore
 
         ## CALCULATING USAGE
         prompt_tokens = len(output.prompt_token_ids)
         completion_tokens = len(output.outputs[0].token_ids)
 
-        model_response["created"] = int(time.time())
-        model_response["model"] = model
+        model_response.created = int(time.time())
+        model_response.model = model
         usage = Usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

@@ -1,9 +1,12 @@
-import os, types
 import json
-from enum import Enum
-import requests  # type: ignore
+import os
 import time
+import types
+from enum import Enum
 from typing import Callable, Optional
+
+import requests  # type: ignore
+
 import litellm
 from litellm.utils import ModelResponse, Usage
 
@@ -117,7 +120,7 @@ def completion(
     encoding,
     api_key,
     logging_obj,
-    optional_params=None,
+    optional_params: dict,
     litellm_params=None,
     logger_fn=None,
     default_max_tokens_to_sample=None,
@@ -161,7 +164,7 @@ def completion(
         data=json.dumps(data),
         stream=optional_params["stream"] if "stream" in optional_params else False,
     )
-    if "stream" in optional_params and optional_params["stream"] == True:
+    if "stream" in optional_params and optional_params["stream"] is True:
         return clean_and_iterate_chunks(response)
     else:
         ## LOGGING
@@ -175,7 +178,7 @@ def completion(
         ## RESPONSE OBJECT
         try:
             completion_response = response.json()
-        except:
+        except Exception:
             raise NLPCloudError(message=response.text, status_code=response.status_code)
         if "error" in completion_response:
             raise NLPCloudError(
@@ -185,10 +188,10 @@ def completion(
         else:
             try:
                 if len(completion_response["generated_text"]) > 0:
-                    model_response["choices"][0]["message"]["content"] = (
+                    model_response.choices[0].message.content = (  # type: ignore
                         completion_response["generated_text"]
                     )
-            except:
+            except Exception:
                 raise NLPCloudError(
                     message=json.dumps(completion_response),
                     status_code=response.status_code,
@@ -198,8 +201,8 @@ def completion(
         prompt_tokens = completion_response["nb_input_tokens"]
         completion_tokens = completion_response["nb_generated_tokens"]
 
-        model_response["created"] = int(time.time())
-        model_response["model"] = model
+        model_response.created = int(time.time())
+        model_response.model = model
         usage = Usage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,

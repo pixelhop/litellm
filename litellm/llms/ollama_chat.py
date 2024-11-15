@@ -1,15 +1,21 @@
-from itertools import chain
-import requests
-import types
-import time
 import json
-import uuid
+import time
 import traceback
-from typing import Optional
-from litellm import verbose_logger
-import litellm
-import httpx
+import types
+import uuid
+from itertools import chain
+from typing import Any, List, Optional
+
 import aiohttp
+import httpx
+import requests
+from pydantic import BaseModel
+
+import litellm
+from litellm import verbose_logger
+from litellm.types.llms.ollama import OllamaToolCall, OllamaToolCallFunction
+from litellm.types.llms.openai import ChatCompletionAssistantToolCall
+from litellm.types.utils import StreamingChoices
 
 
 class OllamaError(Exception):
@@ -135,6 +141,7 @@ class OllamaChatConfig:
     ):
         return [
             "max_tokens",
+            "max_completion_tokens",
             "stream",
             "top_p",
             "temperature",
@@ -147,9 +154,11 @@ class OllamaChatConfig:
             "response_format",
         ]
 
-    def map_openai_params(self, non_default_params: dict, optional_params: dict):
+    def map_openai_params(
+        self, model: str, non_default_params: dict, optional_params: dict
+    ):
         for param, value in non_default_params.items():
-            if param == "max_tokens":
+            if param == "max_tokens" or param == "max_completion_tokens":
                 optional_params["num_predict"] = value
             if param == "stream":
                 optional_params["stream"] = value
@@ -168,16 +177,26 @@ class OllamaChatConfig:
             ### FUNCTION CALLING LOGIC ###
             if param == "tools":
                 # ollama actually supports json output
-                optional_params["format"] = "json"
-                litellm.add_function_to_prompt = (
-                    True  # so that main.py adds the function call to the prompt
-                )
-                optional_params["functions_unsupported_model"] = value
+                ## CHECK IF MODEL SUPPORTS TOOL CALLING ##
+                try:
+                    model_info = litellm.get_model_info(
+                        model=model, custom_llm_provider="ollama"
+                    )
+                    if model_info.get("supports_function_calling") is True:
+                        optional_params["tools"] = value
+                    else:
+                        raise Exception
+                except Exception:
+                    optional_params["format"] = "json"
+                    litellm.add_function_to_prompt = (
+                        True  # so that main.py adds the function call to the prompt
+                    )
+                    optional_params["functions_unsupported_model"] = value
 
-                if len(optional_params["functions_unsupported_model"]) == 1:
-                    optional_params["function_name"] = optional_params[
-                        "functions_unsupported_model"
-                    ][0]["function"]["name"]
+                    if len(optional_params["functions_unsupported_model"]) == 1:
+                        optional_params["function_name"] = optional_params[
+                            "functions_unsupported_model"
+                        ][0]["function"]["name"]
 
             if param == "functions":
                 # ollama actually supports json output
@@ -194,15 +213,15 @@ class OllamaChatConfig:
 
 
 # ollama implementation
-def get_ollama_response(
+def get_ollama_response(  # noqa: PLR0915
+    model_response: litellm.ModelResponse,
+    messages: list,
+    optional_params: dict,
+    model: str,
+    logging_obj: Any,
     api_base="http://localhost:11434",
     api_key: Optional[str] = None,
-    model="llama2",
-    messages=None,
-    optional_params=None,
-    logging_obj=None,
     acompletion: bool = False,
-    model_response=None,
     encoding=None,
 ):
     if api_base.endswith("/api/chat"):
@@ -221,19 +240,42 @@ def get_ollama_response(
     stream = optional_params.pop("stream", False)
     format = optional_params.pop("format", None)
     function_name = optional_params.pop("function_name", None)
+    tools = optional_params.pop("tools", None)
 
+    new_messages = []
     for m in messages:
-        if "role" in m and m["role"] == "tool":
-            m["role"] = "assistant"
+        if isinstance(
+            m, BaseModel
+        ):  # avoid message serialization issues - https://github.com/BerriAI/litellm/issues/5319
+            m = m.model_dump(exclude_none=True)
+        if m.get("tool_calls") is not None and isinstance(m["tool_calls"], list):
+            new_tools: List[OllamaToolCall] = []
+            for tool in m["tool_calls"]:
+                typed_tool = ChatCompletionAssistantToolCall(**tool)  # type: ignore
+                if typed_tool["type"] == "function":
+                    arguments = {}
+                    if "arguments" in typed_tool["function"]:
+                        arguments = json.loads(typed_tool["function"]["arguments"])
+                    ollama_tool_call = OllamaToolCall(
+                        function=OllamaToolCallFunction(
+                            name=typed_tool["function"].get("name") or "",
+                            arguments=arguments,
+                        )
+                    )
+                    new_tools.append(ollama_tool_call)
+            m["tool_calls"] = new_tools
+        new_messages.append(m)
 
     data = {
         "model": model,
-        "messages": messages,
+        "messages": new_messages,
         "options": optional_params,
         "stream": stream,
     }
     if format is not None:
         data["format"] = format
+    if tools is not None:
+        data["tools"] = tools
     ## LOGGING
     logging_obj.pre_call(
         input=None,
@@ -246,7 +288,7 @@ def get_ollama_response(
         },
     )
     if acompletion is True:
-        if stream == True:
+        if stream is True:
             response = ollama_async_streaming(
                 url=url,
                 api_key=api_key,
@@ -266,7 +308,7 @@ def get_ollama_response(
                 function_name=function_name,
             )
         return response
-    elif stream == True:
+    elif stream is True:
         return ollama_completion_stream(
             url=url, api_key=api_key, data=data, logging_obj=logging_obj
         )
@@ -276,7 +318,7 @@ def get_ollama_response(
         "json": data,
     }
     if api_key is not None:
-        _request["headers"] = "Bearer {}".format(api_key)
+        _request["headers"] = {"Authorization": "Bearer {}".format(api_key)}
     response = requests.post(**_request)  # type: ignore
     if response.status_code != 200:
         raise OllamaError(status_code=response.status_code, message=response.text)
@@ -295,8 +337,8 @@ def get_ollama_response(
     response_json = response.json()
 
     ## RESPONSE OBJECT
-    model_response["choices"][0]["finish_reason"] = "stop"
-    if data.get("format", "") == "json":
+    model_response.choices[0].finish_reason = "stop"
+    if data.get("format", "") == "json" and function_name is not None:
         function_call = json.loads(response_json["message"]["content"])
         message = litellm.Message(
             content=None,
@@ -304,29 +346,34 @@ def get_ollama_response(
                 {
                     "id": f"call_{str(uuid.uuid4())}",
                     "function": {
-                        "name": function_call["name"],
-                        "arguments": json.dumps(function_call["arguments"]),
+                        "name": function_call.get("name", function_name),
+                        "arguments": json.dumps(
+                            function_call.get("arguments", function_call)
+                        ),
                     },
                     "type": "function",
                 }
             ],
         )
-        model_response["choices"][0]["message"] = message
-        model_response["choices"][0]["finish_reason"] = "tool_calls"
+        model_response.choices[0].message = message  # type: ignore
+        model_response.choices[0].finish_reason = "tool_calls"
     else:
-        model_response["choices"][0]["message"]["content"] = response_json["message"][
-            "content"
-        ]
-    model_response["created"] = int(time.time())
-    model_response["model"] = "ollama/" + model
+        _message = litellm.Message(**response_json["message"])
+        model_response.choices[0].message = _message  # type: ignore
+    model_response.created = int(time.time())
+    model_response.model = "ollama_chat/" + model
     prompt_tokens = response_json.get("prompt_eval_count", litellm.token_counter(messages=messages))  # type: ignore
     completion_tokens = response_json.get(
         "eval_count", litellm.token_counter(text=response_json["message"]["content"])
     )
-    model_response["usage"] = litellm.Usage(
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=prompt_tokens + completion_tokens,
+    setattr(
+        model_response,
+        "usage",
+        litellm.Usage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        ),
     )
     return model_response
 
@@ -337,9 +384,10 @@ def ollama_completion_stream(url, api_key, data, logging_obj):
         "json": data,
         "method": "POST",
         "timeout": litellm.request_timeout,
+        "follow_redirects": True,
     }
     if api_key is not None:
-        _request["headers"] = "Bearer {}".format(api_key)
+        _request["headers"] = {"Authorization": "Bearer {}".format(api_key)}
     with httpx.stream(**_request) as response:
         try:
             if response.status_code != 200:
@@ -357,12 +405,16 @@ def ollama_completion_stream(url, api_key, data, logging_obj):
             # If format is JSON, this was a function call
             # Gather all chunks and return the function call as one delta to simplify parsing
             if data.get("format", "") == "json":
-                first_chunk = next(streamwrapper)
-                response_content = "".join(
-                    chunk.choices[0].delta.content
-                    for chunk in chain([first_chunk], streamwrapper)
-                    if chunk.choices[0].delta.content
-                )
+                content_chunks = []
+                for chunk in streamwrapper:
+                    chunk_choice = chunk.choices[0]
+                    if (
+                        isinstance(chunk_choice, StreamingChoices)
+                        and hasattr(chunk_choice, "delta")
+                        and hasattr(chunk_choice.delta, "content")
+                    ):
+                        content_chunks.append(chunk_choice.delta.content)
+                response_content = "".join(content_chunks)
 
                 function_call = json.loads(response_content)
                 delta = litellm.utils.Delta(
@@ -378,9 +430,9 @@ def ollama_completion_stream(url, api_key, data, logging_obj):
                         }
                     ],
                 )
-                model_response = first_chunk
-                model_response["choices"][0]["delta"] = delta
-                model_response["choices"][0]["finish_reason"] = "tool_calls"
+                model_response = content_chunks[0]
+                model_response.choices[0].delta = delta  # type: ignore
+                model_response.choices[0].finish_reason = "tool_calls"
                 yield model_response
             else:
                 for transformed_chunk in streamwrapper:
@@ -401,7 +453,7 @@ async def ollama_async_streaming(
             "timeout": litellm.request_timeout,
         }
         if api_key is not None:
-            _request["headers"] = "Bearer {}".format(api_key)
+            _request["headers"] = {"Authorization": "Bearer {}".format(api_key)}
         async with client.stream(**_request) as response:
             if response.status_code != 200:
                 raise OllamaError(
@@ -418,15 +470,28 @@ async def ollama_async_streaming(
             # If format is JSON, this was a function call
             # Gather all chunks and return the function call as one delta to simplify parsing
             if data.get("format", "") == "json":
-                first_chunk = await anext(streamwrapper)
-                first_chunk_content = first_chunk.choices[0].delta.content or ""
-                response_content = first_chunk_content + "".join(
-                    [
-                        chunk.choices[0].delta.content
-                        async for chunk in streamwrapper
-                        if chunk.choices[0].delta.content
-                    ]
-                )
+                first_chunk = await anext(streamwrapper)  # noqa F821
+                chunk_choice = first_chunk.choices[0]
+                if (
+                    isinstance(chunk_choice, StreamingChoices)
+                    and hasattr(chunk_choice, "delta")
+                    and hasattr(chunk_choice.delta, "content")
+                ):
+                    first_chunk_content = chunk_choice.delta.content or ""
+                else:
+                    first_chunk_content = ""
+
+                content_chunks = []
+                async for chunk in streamwrapper:
+                    chunk_choice = chunk.choices[0]
+                    if (
+                        isinstance(chunk_choice, StreamingChoices)
+                        and hasattr(chunk_choice, "delta")
+                        and hasattr(chunk_choice.delta, "content")
+                    ):
+                        content_chunks.append(chunk_choice.delta.content)
+                response_content = first_chunk_content + "".join(content_chunks)
+
                 function_call = json.loads(response_content)
                 delta = litellm.utils.Delta(
                     content=None,
@@ -434,7 +499,9 @@ async def ollama_async_streaming(
                         {
                             "id": f"call_{str(uuid.uuid4())}",
                             "function": {
-                                "name": function_call.get("name", function_call.get("function", None)),
+                                "name": function_call.get(
+                                    "name", function_call.get("function", None)
+                                ),
                                 "arguments": json.dumps(function_call["arguments"]),
                             },
                             "type": "function",
@@ -442,22 +509,23 @@ async def ollama_async_streaming(
                     ],
                 )
                 model_response = first_chunk
-                model_response["choices"][0]["delta"] = delta
-                model_response["choices"][0]["finish_reason"] = "tool_calls"
+                model_response.choices[0].delta = delta  # type: ignore
+                model_response.choices[0].finish_reason = "tool_calls"
                 yield model_response
             else:
                 async for transformed_chunk in streamwrapper:
                     yield transformed_chunk
     except Exception as e:
-        verbose_logger.error("LiteLLM.gemini(): Exception occured - {}".format(str(e)))
-        verbose_logger.debug(traceback.format_exc())
+        verbose_logger.exception(
+            "LiteLLM.ollama(): Exception occured - {}".format(str(e))
+        )
 
 
 async def ollama_acompletion(
     url,
     api_key: Optional[str],
     data,
-    model_response,
+    model_response: litellm.ModelResponse,
     encoding,
     logging_obj,
     function_name,
@@ -471,7 +539,7 @@ async def ollama_acompletion(
                 "json": data,
             }
             if api_key is not None:
-                _request["headers"] = "Bearer {}".format(api_key)
+                _request["headers"] = {"Authorization": "Bearer {}".format(api_key)}
             resp = await session.post(**_request)
 
             if resp.status != 200:
@@ -492,8 +560,9 @@ async def ollama_acompletion(
             )
 
             ## RESPONSE OBJECT
-            model_response["choices"][0]["finish_reason"] = "stop"
-            if data.get("format", "") == "json":
+            model_response.choices[0].finish_reason = "stop"
+
+            if data.get("format", "") == "json" and function_name is not None:
                 function_call = json.loads(response_json["message"]["content"])
                 message = litellm.Message(
                     content=None,
@@ -510,15 +579,14 @@ async def ollama_acompletion(
                         }
                     ],
                 )
-                model_response["choices"][0]["message"] = message
-                model_response["choices"][0]["finish_reason"] = "tool_calls"
+                model_response.choices[0].message = message  # type: ignore
+                model_response.choices[0].finish_reason = "tool_calls"
             else:
-                model_response["choices"][0]["message"]["content"] = response_json[
-                    "message"
-                ]["content"]
+                _message = litellm.Message(**response_json["message"])
+                model_response.choices[0].message = _message  # type: ignore
 
-            model_response["created"] = int(time.time())
-            model_response["model"] = "ollama_chat/" + data["model"]
+            model_response.created = int(time.time())
+            model_response.model = "ollama_chat/" + data["model"]
             prompt_tokens = response_json.get("prompt_eval_count", litellm.token_counter(messages=data["messages"]))  # type: ignore
             completion_tokens = response_json.get(
                 "eval_count",
@@ -526,16 +594,15 @@ async def ollama_acompletion(
                     text=response_json["message"]["content"], count_response_tokens=True
                 ),
             )
-            model_response["usage"] = litellm.Usage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=prompt_tokens + completion_tokens,
+            setattr(
+                model_response,
+                "usage",
+                litellm.Usage(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=prompt_tokens + completion_tokens,
+                ),
             )
             return model_response
     except Exception as e:
-        verbose_logger.error(
-            "LiteLLM.ollama_acompletion(): Exception occured - {}".format(str(e))
-        )
-        verbose_logger.debug(traceback.format_exc())
-
-        raise e
+        raise e  # don't use verbose_logger.exception, if exception is raised

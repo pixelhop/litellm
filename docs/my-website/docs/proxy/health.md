@@ -10,7 +10,12 @@ The proxy exposes:
 
 ## `/health`
 #### Request
-Make a GET Request to `/health` on the proxy
+Make a GET Request to `/health` on the proxy 
+
+:::info
+**This endpoint makes an LLM API call to each model to check if it is healthy.**
+:::
+
 ```shell
 curl --location 'http://0.0.0.0:4000/health' -H "Authorization: Bearer sk-1234"
 ```
@@ -41,9 +46,123 @@ litellm --health
 }
 ```
 
-### Background Health Checks 
+### Embedding Models 
 
-You can enable model health checks being run in the background, to prevent each model from being queried too frequently via `/health`.
+To run embedding health checks, specify the mode as "embedding" in your config for the relevant model.
+
+```yaml
+model_list:
+  - model_name: azure-embedding-model
+    litellm_params:
+      model: azure/azure-embedding-model
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: "2023-07-01-preview"
+    model_info:
+      mode: embedding # 👈 ADD THIS
+```
+
+### Image Generation Models 
+
+To run image generation health checks, specify the mode as "image_generation" in your config for the relevant model.
+
+```yaml
+model_list:
+  - model_name: dall-e-3
+    litellm_params:
+      model: azure/dall-e-3
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: "2023-07-01-preview"
+    model_info:
+      mode: image_generation # 👈 ADD THIS
+```
+
+
+### Text Completion Models 
+
+
+To run `/completions` health checks, specify the mode as "completion" in your config for the relevant model.
+
+```yaml
+model_list:
+  - model_name: azure-text-completion
+    litellm_params:
+      model: azure/text-davinci-003
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: "2023-07-01-preview"
+    model_info:
+      mode: completion # 👈 ADD THIS
+```
+
+### Speech to Text Models 
+
+```yaml
+model_list:
+  - model_name: whisper
+    litellm_params:
+      model: whisper-1
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: audio_transcription
+```
+
+
+### Text to Speech Models 
+
+```yaml
+# OpenAI Text to Speech Models
+  - model_name: tts
+    litellm_params:
+      model: openai/tts-1
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      mode: audio_speech
+```
+
+### Batch Models (Azure Only)
+
+For Azure models deployed as 'batch' models, set `mode: batch`. 
+
+```yaml
+model_list:
+  - model_name: "batch-gpt-4o-mini"
+    litellm_params:
+      model: "azure/batch-gpt-4o-mini"
+      api_key: os.environ/AZURE_API_KEY
+      api_base: os.environ/AZURE_API_BASE
+    model_info:
+      mode: batch
+```
+
+Expected Response 
+
+
+```bash
+{
+    "healthy_endpoints": [
+        {
+            "api_base": "https://...",
+            "model": "azure/gpt-4o-mini",
+            "x-ms-region": "East US"
+        }
+    ],
+    "unhealthy_endpoints": [],
+    "healthy_count": 1,
+    "unhealthy_count": 0
+}
+```
+
+## Background Health Checks 
+
+You can enable model health checks being run in the background, to prevent each model from being queried too frequently via `/health`. 
+
+:::info
+
+**This makes an LLM API call to each model to check if it is healthy.**
+
+:::
 
 Here's how to use it: 
 1. in the config.yaml add:
@@ -63,53 +182,17 @@ $ litellm /path/to/config.yaml
 curl --location 'http://0.0.0.0:4000/health'
 ```
 
-### Embedding Models 
+### Hide details
 
-We need some way to know if the model is an embedding model when running checks, if you have this in your config, specifying mode it makes an embedding health check
+The health check response contains details like endpoint URLs, error messages,
+and other LiteLLM params. While this is useful for debugging, it can be
+problematic when exposing the proxy server to a broad audience.
 
-```yaml
-model_list:
-  - model_name: azure-embedding-model
-    litellm_params:
-      model: azure/azure-embedding-model
-      api_base: os.environ/AZURE_API_BASE
-      api_key: os.environ/AZURE_API_KEY
-      api_version: "2023-07-01-preview"
-    model_info:
-      mode: embedding # 👈 ADD THIS
-```
-
-### Image Generation Models 
-
-We need some way to know if the model is an image generation model when running checks, if you have this in your config, specifying mode it makes an image generation health check
+You can hide these details by setting the `health_check_details` setting to `False`.
 
 ```yaml
-model_list:
-  - model_name: dall-e-3
-    litellm_params:
-      model: azure/dall-e-3
-      api_base: os.environ/AZURE_API_BASE
-      api_key: os.environ/AZURE_API_KEY
-      api_version: "2023-07-01-preview"
-    model_info:
-      mode: image_generation # 👈 ADD THIS
-```
-
-
-### Text Completion Models 
-
-We need some way to know if the model is a text completion model when running checks, if you have this in your config, specifying mode it makes an embedding health check
-
-```yaml
-model_list:
-  - model_name: azure-text-completion
-    litellm_params:
-      model: azure/text-davinci-003
-      api_base: os.environ/AZURE_API_BASE
-      api_key: os.environ/AZURE_API_KEY
-      api_version: "2023-07-01-preview"
-    model_info:
-      mode: completion # 👈 ADD THIS
+general_settings: 
+  health_check_details: False
 ```
 
 ## `/health/readiness`
@@ -118,31 +201,33 @@ Unprotected endpoint for checking if proxy is ready to accept requests
 
 Example Request: 
 
-```bash 
-curl --location 'http://0.0.0.0:4000/health/readiness'
+```bash
+curl http://0.0.0.0:4000/health/readiness
 ```
 
 Example Response:  
 
-*If proxy connected to a database*  
-
 ```json
 {
-    "status": "healthy",
-    "db": "connected",
-    "litellm_version":"1.19.2",
+  "status": "connected",
+  "db": "connected",
+  "cache": null,
+  "litellm_version": "1.40.21",
+  "success_callbacks": [
+    "langfuse",
+    "_PROXY_track_cost_callback",
+    "response_taking_too_long_callback",
+    "_PROXY_MaxParallelRequestsHandler",
+    "_PROXY_MaxBudgetLimiter",
+    "_PROXY_CacheControlCheck",
+    "ServiceLogging"
+  ],
+  "last_updated": "2024-07-10T18:59:10.616968"
 }
 ```
 
-*If proxy not connected to a database*  
-
-```json
-{
-    "status": "healthy",
-    "db": "Not connected",
-    "litellm_version":"1.19.2",
-}
-```
+If the proxy is not connected to a database, then the `"db"` field will be `"Not
+connected"` instead of `"connected"` and the `"last_updated"` field will not be present.
 
 ## `/health/liveliness`
 
@@ -204,3 +289,4 @@ curl -X POST 'http://localhost:4000/chat/completions' \
 }
 '
 ```
+

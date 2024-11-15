@@ -1,12 +1,14 @@
-import types
-import traceback
 import copy
 import time
+import traceback
+import types
 from typing import Callable, Optional
-from litellm.utils import ModelResponse, Choices, Message, Usage
-import litellm
+
 import httpx
+
+import litellm
 from litellm import verbose_logger
+from litellm.utils import Choices, Message, ModelResponse, Usage
 
 
 class PalmError(Exception):
@@ -94,13 +96,13 @@ def completion(
     api_key,
     encoding,
     logging_obj,
-    optional_params=None,
+    optional_params: dict,
     litellm_params=None,
     logger_fn=None,
 ):
     try:
         import google.generativeai as palm  # type: ignore
-    except:
+    except Exception:
         raise Exception(
             "Importing google.generativeai failed, please run 'pip install -q google-generativeai"
         )
@@ -164,19 +166,15 @@ def completion(
                 message_obj = Message(content=None)
             choice_obj = Choices(index=idx + 1, message=message_obj)
             choices_list.append(choice_obj)
-        model_response["choices"] = choices_list
-    except Exception as e:
-        verbose_logger.error(
-            "litellm.llms.palm.py::completion(): Exception occured - {}".format(str(e))
-        )
-        verbose_logger.debug(traceback.format_exc())
+        model_response.choices = choices_list  # type: ignore
+    except Exception:
         raise PalmError(
             message=traceback.format_exc(), status_code=response.status_code
         )
 
     try:
         completion_response = model_response["choices"][0]["message"].get("content")
-    except:
+    except Exception:
         raise PalmError(
             status_code=400,
             message=f"No response received. Original response - {response}",
@@ -188,8 +186,8 @@ def completion(
         encoding.encode(model_response["choices"][0]["message"].get("content", ""))
     )
 
-    model_response["created"] = int(time.time())
-    model_response["model"] = "palm/" + model
+    model_response.created = int(time.time())
+    model_response.model = "palm/" + model
     usage = Usage(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
