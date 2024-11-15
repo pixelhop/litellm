@@ -1,4 +1,4 @@
-version: "3.11"
+
 services:
   litellm:
     build:
@@ -29,6 +29,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - COHERE_API_KEY=${COHERE_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
         # DATABASE_URL: "postgresql://llmproxy:dbpassword9090@db:5432/litellm"
         # STORE_MODEL_IN_DB: "True" # allows adding models to proxy via UI
     env_file:
