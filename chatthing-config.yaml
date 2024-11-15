@@ -29,9 +29,12 @@ model_list:
       extra_headers: {"anthropic-beta": "tools-2024-05-16"}
   - model_name: 3.5-sonnet
     litellm_params:
-      model: anthropic/claude-3-5-sonnet-20240620
+      model: anthropic/claude-3-5-sonnet-latest
       api_key: os.environ/ANTHROPIC_API_KEY
-      extra_headers: {"anthropic-beta": "tools-2024-05-16"}
+  - model_name: 3.5-haiku
+    litellm_params:
+      model: anthropic/claude-3-5-haiku-latest
+      api_key: os.environ/ANTHROPIC_API_KEY
   - model_name: llama2
     litellm_params:
       model: groq/llama2-70b-4096
