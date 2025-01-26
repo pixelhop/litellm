@@ -102,6 +102,14 @@ model_list:
     litellm_params:
       model: gemini/gemini-1.5-flash
       api_key: os.environ/GEMINI_API_KEY
+  - model_name: deepseek-reasoner
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+  - model_name: deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
   - model_name: text-embedding-ada-002
     litellm_params: 
       model: openai/text-embedding-ada-002
