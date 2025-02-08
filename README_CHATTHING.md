@@ -20,4 +20,4 @@ Verify everything is still working by running:
 docker-compose up
 ```
 
-and testing the API
+and test the API
