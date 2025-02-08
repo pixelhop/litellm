@@ -1,18 +1,23 @@
+import Image from '@theme/IdealImage';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Logging
 
 Log Proxy input, output, and exceptions using:
 
 - Langfuse
 - OpenTelemetry
+- GCS, s3, Azure (Blob) Buckets
+- Lunary
+- MLflow
 - Custom Callbacks
 - Langsmith
 - DataDog
 - DynamoDB
 - etc.
 
-import Image from '@theme/IdealImage';
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
+
 
 ## Getting the LiteLLM Call ID
 
@@ -47,7 +52,19 @@ A number of these headers could be useful for troubleshooting, but the
 `x-litellm-call-id` is the one that is most useful for tracking a request across
 components in your system, including in logging tools.
 
-## Redacting UserAPIKeyInfo 
+
+## Logging Features
+
+### Conditional Logging by Virtual Keys, Teams
+
+Use this to:
+1. Conditionally enable logging for some virtual keys/teams
+2. Set different logging providers for different virtual keys/teams
+
+[👉 **Get Started** - Team/Key Based Logging](team_logging)
+
+
+### Redacting UserAPIKeyInfo 
 
 Redact information about the user api key (hashed token, user_id, team id, etc.), from logs. 
 
@@ -59,94 +76,204 @@ litellm_settings:
   redact_user_api_key_info: true
 ```
 
-Removes any field with `user_api_key_*` from metadata.
 
-## What gets logged? StandardLoggingPayload
+### Redact Messages, Response Content
+
+Set `litellm.turn_off_message_logging=True` This will prevent the messages and responses from being logged to your logging provider, but request metadata - e.g. spend, will still be tracked.
+
+<Tabs>
+
+<TabItem value="global" label="Global">
+
+**1. Setup config.yaml **
+```yaml
+model_list:
+ - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+litellm_settings:
+  success_callback: ["langfuse"]
+  turn_off_message_logging: True # 👈 Key Change
+```
+
+**2. Send request**
+```shell
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+    --header 'Content-Type: application/json' \
+    --data '{
+    "model": "gpt-3.5-turbo",
+    "messages": [
+        {
+        "role": "user",
+        "content": "what llm are you"
+        }
+    ]
+}'
+```
+
+
+
+</TabItem>
+<TabItem value="dynamic" label="Per Request">
+
+:::info
+
+Dynamic request message redaction is in BETA. 
+
+:::
+
+Pass in a request header to enable message redaction for a request.
+
+```
+x-litellm-enable-message-redaction: true
+```
+
+Example config.yaml
+
+**1. Setup config.yaml **
+
+```yaml
+model_list:
+ - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+```
+
+**2. Setup per request header**
+
+```shell
+curl -L -X POST 'http://0.0.0.0:4000/v1/chat/completions' \
+-H 'Content-Type: application/json' \
+-H 'Authorization: Bearer sk-zV5HlSIm8ihj1F9C_ZbB1g' \
+-H 'x-litellm-enable-message-redaction: true' \
+-d '{
+  "model": "gpt-3.5-turbo-testing",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hey, how'\''s it going 1234?"
+    }
+  ]
+}'
+```
+
+</TabItem>
+</Tabs>
+
+**3. Check Logging Tool + Spend Logs**
+
+**Logging Tool**
+
+<Image img={require('../../img/message_redaction_logging.png')}/>
+
+**Spend Logs**
+
+<Image img={require('../../img/message_redaction_spend_logs.png')} />
+
+
+### Disable Message Redaction
+
+If you have `litellm.turn_on_message_logging` turned on, you can override it for specific requests by
+setting a request header `LiteLLM-Disable-Message-Redaction: true`.
+
+
+```shell
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+    --header 'Content-Type: application/json' \
+    --header 'LiteLLM-Disable-Message-Redaction: true' \
+    --data '{
+    "model": "gpt-3.5-turbo",
+    "messages": [
+        {
+        "role": "user",
+        "content": "what llm are you"
+        }
+    ]
+}'
+```
+
+
+### Turn off all tracking/logging
+
+For some use cases, you may want to turn off all tracking/logging. You can do this by passing `no-log=True` in the request body.
+
+:::info
+
+Disable this by setting `global_disable_no_log_param:true` in your config.yaml file.
+
+```yaml
+litellm_settings:
+  global_disable_no_log_param: True
+```
+:::
+
+<Tabs>
+<TabItem value="Curl" label="Curl Request">
+
+```bash
+curl -L -X POST 'http://0.0.0.0:4000/v1/chat/completions' \
+-H 'Content-Type: application/json' \
+-H 'Authorization: Bearer <litellm-api-key>' \
+-d '{
+    "model": "openai/gpt-3.5-turbo",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What'\''s in this image?"
+          }
+        ]
+      }
+    ],
+    "max_tokens": 300,
+    "no-log": true # 👈 Key Change
+}'
+```
+
+</TabItem>
+<TabItem value="OpenAI" label="OpenAI">
+
+```python
+import openai
+client = openai.OpenAI(
+    api_key="anything",
+    base_url="http://0.0.0.0:4000"
+)
+
+# request sent to model set on litellm proxy, `litellm --model`
+response = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages = [
+        {
+            "role": "user",
+            "content": "this is a test request, write a short poem"
+        }
+    ],
+    extra_body={
+      "no-log": True # 👈 Key Change
+    }
+)
+
+print(response)
+```
+
+</TabItem>
+</Tabs>
+
+**Expected Console Log**  
+
+```
+LiteLLM.Info: "no-log request, skipping logging"
+```
+
+
+## What gets logged?
 
 Found under `kwargs["standard_logging_object"]`. This is a standard payload, logged for every response.
 
-```python
-
-class StandardLoggingPayload(TypedDict):
-    id: str
-    trace_id: str  # Trace multiple LLM calls belonging to same overall request (e.g. fallbacks/retries)
-    call_type: str
-    response_cost: float
-    response_cost_failure_debug_info: Optional[
-        StandardLoggingModelCostFailureDebugInformation
-    ]
-    status: StandardLoggingPayloadStatus
-    total_tokens: int
-    prompt_tokens: int
-    completion_tokens: int
-    startTime: float
-    endTime: float
-    completionStartTime: float
-    model_map_information: StandardLoggingModelInformation
-    model: str
-    model_id: Optional[str]
-    model_group: Optional[str]
-    api_base: str
-    metadata: StandardLoggingMetadata
-    cache_hit: Optional[bool]
-    cache_key: Optional[str]
-    saved_cache_cost: float
-    request_tags: list
-    end_user: Optional[str]
-    requester_ip_address: Optional[str]
-    messages: Optional[Union[str, list, dict]]
-    response: Optional[Union[str, list, dict]]
-    error_str: Optional[str]
-    model_parameters: dict
-    hidden_params: StandardLoggingHiddenParams
-
-class StandardLoggingHiddenParams(TypedDict):
-    model_id: Optional[str]
-    cache_key: Optional[str]
-    api_base: Optional[str]
-    response_cost: Optional[str]
-    additional_headers: Optional[StandardLoggingAdditionalHeaders]
-
-class StandardLoggingAdditionalHeaders(TypedDict, total=False):
-    x_ratelimit_limit_requests: int
-    x_ratelimit_limit_tokens: int
-    x_ratelimit_remaining_requests: int
-    x_ratelimit_remaining_tokens: int
-
-class StandardLoggingMetadata(StandardLoggingUserAPIKeyMetadata):
-    """
-    Specific metadata k,v pairs logged to integration for easier cost tracking
-    """
-
-    spend_logs_metadata: Optional[
-        dict
-    ]  # special param to log k,v pairs to spendlogs for a call
-    requester_ip_address: Optional[str]
-    requester_metadata: Optional[dict]
-
-class StandardLoggingModelInformation(TypedDict):
-    model_map_key: str
-    model_map_value: Optional[ModelInfo]
-  
-
-StandardLoggingPayloadStatus = Literal["success", "failure"]
-
-class StandardLoggingModelCostFailureDebugInformation(TypedDict, total=False):
-    """
-    Debug information, if cost tracking fails.
-
-    Avoid logging sensitive information like response or optional params
-    """
-
-    error_str: Required[str]
-    traceback_str: Required[str]
-    model: str
-    cache_hit: Optional[bool]
-    custom_llm_provider: Optional[str]
-    base_model: Optional[str]
-    call_type: str
-    custom_pricing: Optional[bool]
-```
+[👉 **Standard Logging Payload Specification**](./logging_spec)
 
 ## Langfuse
 
@@ -300,73 +427,110 @@ print(response)
 </TabItem>
 </Tabs>
 
-### Team based Logging to Langfuse
+### Custom Tags
 
-[👉 Tutorial - Allow each team to use their own Langfuse Project / custom callbacks](team_logging)
-<!-- 
+Set `tags` as part of your request body
 
-**Example:**
 
-This config would send langfuse logs to 2 different langfuse projects, based on the team id 
+<Tabs>
 
-```yaml
-litellm_settings:
-  default_team_settings: 
-    - team_id: my-secret-project
-      success_callback: ["langfuse"]
-      langfuse_public_key: os.environ/LANGFUSE_PUB_KEY_1 # Project 1
-      langfuse_secret: os.environ/LANGFUSE_PRIVATE_KEY_1 # Project 1
-    - team_id: ishaans-secret-project
-      success_callback: ["langfuse"]
-      langfuse_public_key: os.environ/LANGFUSE_PUB_KEY_2 # Project 2
-      langfuse_secret: os.environ/LANGFUSE_SECRET_2 # Project 2
+
+<TabItem value="openai" label="OpenAI Python v1.0.0+">
+
+```python
+import openai
+client = openai.OpenAI(
+    api_key="sk-1234",
+    base_url="http://0.0.0.0:4000"
+)
+
+response = client.chat.completions.create(
+    model="llama3",
+    messages = [
+        {
+            "role": "user",
+            "content": "this is a test request, write a short poem"
+        }
+    ],
+    user="palantir",
+    extra_body={
+        "metadata": {
+            "tags": ["jobID:214590dsff09fds", "taskName:run_page_classification"]
+        }
+    }
+)
+
+print(response)
 ```
+</TabItem>
 
-Now, when you [generate keys](./virtual_keys.md) for this team-id 
+<TabItem value="Curl" label="Curl Request">
 
-```bash
-curl -X POST 'http://0.0.0.0:4000/key/generate' \
--H 'Authorization: Bearer sk-1234' \
--H 'Content-Type: application/json' \
--d '{"team_id": "ishaans-secret-project"}'
-```
-
-All requests made with these keys will log data to their team-specific logging. -->
-
-### Redacting Messages, Response Content from Langfuse Logging 
-
-Set `litellm.turn_off_message_logging=True` This will prevent the messages and responses from being logged to langfuse, but request metadata will still be logged.
-
-```yaml
-model_list:
- - model_name: gpt-3.5-turbo
-    litellm_params:
-      model: gpt-3.5-turbo
-litellm_settings:
-  success_callback: ["langfuse"]
-  turn_off_message_logging: True
-```
-
-If you have this feature turned on, you can override it for specific requests by
-setting a request header `LiteLLM-Disable-Message-Redaction: true`.
+Pass `metadata` as part of the request body
 
 ```shell
 curl --location 'http://0.0.0.0:4000/chat/completions' \
     --header 'Content-Type: application/json' \
-    --header 'LiteLLM-Disable-Message-Redaction: true' \
+    --header 'Authorization: Bearer sk-1234' \
     --data '{
-    "model": "gpt-3.5-turbo",
+    "model": "llama3",
     "messages": [
         {
         "role": "user",
         "content": "what llm are you"
         }
-    ]
+    ],
+    "user": "palantir",
+    "metadata": {
+        "tags": ["jobID:214590dsff09fds", "taskName:run_page_classification"]
+    }
 }'
 ```
+</TabItem>
+<TabItem value="langchain" label="Langchain">
+
+```python
+from langchain.chat_models import ChatOpenAI
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+)
+from langchain.schema import HumanMessage, SystemMessage
+import os
+
+os.environ["OPENAI_API_KEY"] = "sk-1234"
+
+chat = ChatOpenAI(
+    openai_api_base="http://0.0.0.0:4000",
+    model = "llama3",
+    user="palantir",
+    extra_body={
+        "metadata": {
+            "tags": ["jobID:214590dsff09fds", "taskName:run_page_classification"]
+        }
+    }
+)
+
+messages = [
+    SystemMessage(
+        content="You are a helpful assistant that im using to make a test request to."
+    ),
+    HumanMessage(
+        content="test from litellm. tell me why it's amazing in 1 sentence"
+    ),
+]
+response = chat(messages)
+
+print(response)
+```
+
+</TabItem>
+</Tabs>
 
 
-### LiteLLM-specific Tags on Langfuse - `cache_hit`, `cache_key`
+
+### LiteLLM Tags - `cache_hit`, `cache_key`
 
 Use this if you want to control which LiteLLM-specific fields are logged as tags by the LiteLLM proxy. By default LiteLLM Proxy logs no LiteLLM-specific fields
 
@@ -401,7 +565,7 @@ litellm_settings:
   langfuse_default_tags: ["cache_hit", "cache_key", "proxy_base_url", "user_api_key_alias", "user_api_key_user_id", "user_api_key_user_email", "user_api_key_team_alias", "semantic-similarity", "proxy_base_url"]
 ```
 
-### 🔧 Debugging - Viewing RAW CURL sent from LiteLLM to provider
+### View POST sent from LiteLLM to provider
 
 Use this when you want to view the RAW curl request sent from LiteLLM to the LLM API 
 
@@ -504,7 +668,7 @@ You will see `raw_request` in your Langfuse Metadata. This is the RAW CURL comma
 
 <Image img={require('../../img/debug_langfuse.png')} />
 
-## OpenTelemetry format
+## OpenTelemetry
 
 :::info 
 
@@ -786,7 +950,7 @@ curl --location 'http://0.0.0.0:4000/chat/completions' \
 
 ** 🎉 Expect to see this trace logged in your OTEL collector**
 
-### Redacting Messages, Response Content from OTEL Logging
+### Redacting Messages, Response Content
 
 Set `message_logging=False` for `otel`, no messages / response will be logged
 
@@ -800,7 +964,8 @@ callback_settings:
     message_logging: False
 ```
 
-### Context propagation across Services `Traceparent HTTP Header`
+### Traceparent Header
+##### Context propagation across Services `Traceparent HTTP Header`
 
 ❓ Use this when you want to **pass information about the incoming request in a distributed tracing system**
 
@@ -850,7 +1015,7 @@ Search for Trace=`80e1afed08e019fc1110464cfa66635c` on your OTEL Collector
 
 <Image img={require('../../img/otel_parent.png')} />
 
-### Forwarding `Traceparent HTTP Header` to LLM APIs
+##### Forwarding `Traceparent HTTP Header` to LLM APIs
 
 Use this if you want to forward the traceparent headers to your self hosted LLMs like vLLM
 
@@ -866,6 +1031,535 @@ Only use this for self hosted LLMs, this can cause Bedrock, VertexAI calls to fa
 litellm_settings:
   forward_traceparent_to_llm_provider: True
 ```
+
+## Google Cloud Storage Buckets
+
+Log LLM Logs to [Google Cloud Storage Buckets](https://cloud.google.com/storage?hl=en)
+
+:::info
+
+✨ This is an Enterprise only feature [Get Started with Enterprise here](https://calendly.com/d/4mp-gd3-k5k/litellm-1-1-onboarding-chat)
+
+:::
+
+
+| Property | Details |
+|----------|---------|
+| Description | Log LLM Input/Output to cloud storage buckets |
+| Load Test Benchmarks | [Benchmarks](https://docs.litellm.ai/docs/benchmarks) |
+| Google Docs on Cloud Storage | [Google Cloud Storage](https://cloud.google.com/storage?hl=en) |
+
+
+
+#### Usage
+
+1. Add `gcs_bucket` to LiteLLM Config.yaml
+```yaml
+model_list:
+- litellm_params:
+    api_base: https://exampleopenaiendpoint-production.up.railway.app/
+    api_key: my-fake-key
+    model: openai/my-fake-model
+  model_name: fake-openai-endpoint
+
+litellm_settings:
+  callbacks: ["gcs_bucket"] # 👈 KEY CHANGE # 👈 KEY CHANGE
+```
+
+2. Set required env variables
+
+```shell
+GCS_BUCKET_NAME="<your-gcs-bucket-name>"
+GCS_PATH_SERVICE_ACCOUNT="/Users/ishaanjaffer/Downloads/adroit-crow-413218-a956eef1a2a8.json" # Add path to service account.json
+```
+
+3. Start Proxy
+
+```
+litellm --config /path/to/config.yaml
+```
+
+4. Test it! 
+
+```bash
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+--header 'Content-Type: application/json' \
+--data ' {
+      "model": "fake-openai-endpoint",
+      "messages": [
+        {
+          "role": "user",
+          "content": "what llm are you"
+        }
+      ],
+    }
+'
+```
+
+
+#### Expected Logs on GCS Buckets
+
+<Image img={require('../../img/gcs_bucket.png')} />
+
+#### Fields Logged on GCS Buckets
+
+[**The standard logging object is logged on GCS Bucket**](../proxy/logging_spec)
+
+
+#### Getting `service_account.json` from Google Cloud Console
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Search for IAM & Admin
+3. Click on Service Accounts
+4. Select a Service Account
+5. Click on 'Keys' -> Add Key -> Create New Key -> JSON
+6. Save the JSON file and add the path to `GCS_PATH_SERVICE_ACCOUNT`
+
+
+
+## Google Cloud Storage - PubSub Topic
+
+Log LLM Logs/SpendLogs to [Google Cloud Storage PubSub Topic](https://cloud.google.com/pubsub/docs/reference/rest)
+
+:::info
+
+✨ This is an Enterprise only feature [Get Started with Enterprise here](https://calendly.com/d/4mp-gd3-k5k/litellm-1-1-onboarding-chat)
+
+:::
+
+
+| Property | Details |
+|----------|---------|
+| Description | Log LiteLLM `SpendLogs Table` to Google Cloud Storage PubSub Topic |
+
+When to use `gcs_pubsub`?
+
+- If your LiteLLM Database has crossed 1M+ spend logs and you want to send `SpendLogs` to a PubSub Topic that can be consumed by GCS BigQuery
+
+
+#### Usage
+
+1. Add `gcs_pubsub` to LiteLLM Config.yaml
+```yaml
+model_list:
+- litellm_params:
+    api_base: https://exampleopenaiendpoint-production.up.railway.app/
+    api_key: my-fake-key
+    model: openai/my-fake-model
+  model_name: fake-openai-endpoint
+
+litellm_settings:
+  callbacks: ["gcs_pubsub"] # 👈 KEY CHANGE # 👈 KEY CHANGE
+```
+
+2. Set required env variables
+
+```shell
+GCS_PUBSUB_TOPIC_ID="litellmDB"
+GCS_PUBSUB_PROJECT_ID="reliableKeys"
+```
+
+3. Start Proxy
+
+```
+litellm --config /path/to/config.yaml
+```
+
+4. Test it! 
+
+```bash
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+--header 'Content-Type: application/json' \
+--data ' {
+      "model": "fake-openai-endpoint",
+      "messages": [
+        {
+          "role": "user",
+          "content": "what llm are you"
+        }
+      ],
+    }
+'
+```
+
+
+
+## s3 Buckets
+
+We will use the `--config` to set 
+
+- `litellm.success_callback = ["s3"]` 
+
+This will log all successfull LLM calls to s3 Bucket
+
+**Step 1** Set AWS Credentials in .env
+
+```shell
+AWS_ACCESS_KEY_ID = ""
+AWS_SECRET_ACCESS_KEY = ""
+AWS_REGION_NAME = ""
+```
+
+**Step 2**: Create a `config.yaml` file and set `litellm_settings`: `success_callback`
+
+```yaml
+model_list:
+ - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+litellm_settings:
+  success_callback: ["s3"]
+  s3_callback_params:
+    s3_bucket_name: logs-bucket-litellm   # AWS Bucket Name for S3
+    s3_region_name: us-west-2              # AWS Region Name for S3
+    s3_aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID  # us os.environ/<variable name> to pass environment variables. This is AWS Access Key ID for S3
+    s3_aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY  # AWS Secret Access Key for S3
+    s3_path: my-test-path # [OPTIONAL] set path in bucket you want to write logs to
+    s3_endpoint_url: https://s3.amazonaws.com  # [OPTIONAL] S3 endpoint URL, if you want to use Backblaze/cloudflare s3 buckets
+```
+
+**Step 3**: Start the proxy, make a test request
+
+Start proxy
+
+```shell
+litellm --config config.yaml --debug
+```
+
+Test Request
+
+```shell
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+    --header 'Content-Type: application/json' \
+    --data ' {
+    "model": "Azure OpenAI GPT-4 East",
+    "messages": [
+        {
+        "role": "user",
+        "content": "what llm are you"
+        }
+    ]
+    }'
+```
+
+Your logs should be available on the specified s3 Bucket
+
+### Team Alias Prefix in Object Key
+
+**This is a preview feature**
+
+You can add the team alias to the object key by setting the `team_alias` in the `config.yaml` file. This will prefix the object key with the team alias.
+
+```yaml
+litellm_settings:
+  callbacks: ["s3"]
+  enable_preview_features: true
+  s3_callback_params:
+    s3_bucket_name: logs-bucket-litellm
+    s3_region_name: us-west-2
+    s3_aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
+    s3_aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
+    s3_path: my-test-path
+    s3_endpoint_url: https://s3.amazonaws.com
+    s3_use_team_prefix: true
+```
+
+On s3 bucket, you will see the object key as `my-test-path/my-team-alias/...`
+
+## Azure Blob Storage
+
+Log LLM Logs to [Azure Data Lake Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction)
+
+:::info
+
+✨ This is an Enterprise only feature [Get Started with Enterprise here](https://calendly.com/d/4mp-gd3-k5k/litellm-1-1-onboarding-chat)
+
+:::
+
+
+| Property | Details |
+|----------|---------|
+| Description | Log LLM Input/Output to Azure Blob Storag (Bucket) |
+| Azure Docs on Data Lake Storage | [Azure Data Lake Storage](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction) |
+
+
+
+#### Usage
+
+1. Add `azure_storage` to LiteLLM Config.yaml
+```yaml
+model_list:
+  - model_name: fake-openai-endpoint
+    litellm_params:
+      model: openai/fake
+      api_key: fake-key
+      api_base: https://exampleopenaiendpoint-production.up.railway.app/
+
+litellm_settings:
+  callbacks: ["azure_storage"] # 👈 KEY CHANGE # 👈 KEY CHANGE
+```
+
+2. Set required env variables
+
+```shell
+# Required Environment Variables for Azure Storage
+AZURE_STORAGE_ACCOUNT_NAME="litellm2" # The name of the Azure Storage Account to use for logging
+AZURE_STORAGE_FILE_SYSTEM="litellm-logs" # The name of the Azure Storage File System to use for logging.  (Typically the Container name)
+
+# Authentication Variables
+# Option 1: Use Storage Account Key
+AZURE_STORAGE_ACCOUNT_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" # The Azure Storage Account Key to use for Authentication
+
+# Option 2: Use Tenant ID + Client ID + Client Secret
+AZURE_STORAGE_TENANT_ID="985efd7cxxxxxxxxxx" # The Application Tenant ID to use for Authentication
+AZURE_STORAGE_CLIENT_ID="abe66585xxxxxxxxxx" # The Application Client ID to use for Authentication
+AZURE_STORAGE_CLIENT_SECRET="uMS8Qxxxxxxxxxx" # The Application Client Secret to use for Authentication
+```
+
+3. Start Proxy
+
+```
+litellm --config /path/to/config.yaml
+```
+
+4. Test it! 
+
+```bash
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+--header 'Content-Type: application/json' \
+--data ' {
+      "model": "fake-openai-endpoint",
+      "messages": [
+        {
+          "role": "user",
+          "content": "what llm are you"
+        }
+      ],
+    }
+'
+```
+
+
+#### Expected Logs on Azure Data Lake Storage
+
+<Image img={require('../../img/azure_blob.png')} />
+
+#### Fields Logged on Azure Data Lake Storage
+
+[**The standard logging object is logged on Azure Data Lake Storage**](../proxy/logging_spec)
+
+
+
+## DataDog
+
+LiteLLM Supports logging to the following Datdog Integrations:
+- `datadog` [Datadog Logs](https://docs.datadoghq.com/logs/)
+- `datadog_llm_observability` [Datadog LLM Observability](https://www.datadoghq.com/product/llm-observability/)
+- `ddtrace-run` [Datadog Tracing](#datadog-tracing)
+
+<Tabs>
+<TabItem value="datadog" label="Datadog Logs">
+
+We will use the `--config` to set `litellm.callbacks = ["datadog"]` this will log all successfull LLM calls to DataDog
+
+**Step 1**: Create a `config.yaml` file and set `litellm_settings`: `success_callback`
+
+```yaml
+model_list:
+ - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+litellm_settings:
+  callbacks: ["datadog"] # logs llm success + failure logs on datadog
+  service_callback: ["datadog"] # logs redis, postgres failures on datadog
+```
+
+</TabItem>
+<TabItem value="datadog_llm_observability" label="Datadog LLM Observability">
+
+```yaml
+model_list:
+ - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+litellm_settings:
+  callbacks: ["datadog_llm_observability"] # logs llm success logs on datadog
+```
+
+</TabItem>
+</Tabs>
+
+**Step 2**: Set Required env variables for datadog
+
+```shell
+DD_API_KEY="5f2d0f310***********" # your datadog API Key
+DD_SITE="us5.datadoghq.com"       # your datadog base url
+DD_SOURCE="litellm_dev"       # [OPTIONAL] your datadog source. use to differentiate dev vs. prod deployments
+```
+
+**Step 3**: Start the proxy, make a test request
+
+Start proxy
+
+```shell
+litellm --config config.yaml --debug
+```
+
+Test Request
+
+```shell
+curl --location 'http://0.0.0.0:4000/chat/completions' \
+    --header 'Content-Type: application/json' \
+    --data '{
+    "model": "gpt-3.5-turbo",
+    "messages": [
+        {
+        "role": "user",
+        "content": "what llm are you"
+        }
+    ],
+    "metadata": {
+        "your-custom-metadata": "custom-field",
+    }
+}'
+```
+
+Expected output on Datadog
+
+<Image img={require('../../img/dd_small1.png')} />
+
+#### Datadog Tracing
+
+Use `ddtrace-run` to enable [Datadog Tracing](https://ddtrace.readthedocs.io/en/stable/installation_quickstart.html) on litellm proxy
+
+Pass `USE_DDTRACE=true` to the docker run command. When `USE_DDTRACE=true`, the proxy will run `ddtrace-run litellm` as the `ENTRYPOINT` instead of just `litellm`
+
+```bash
+docker run \
+    -v $(pwd)/litellm_config.yaml:/app/config.yaml \
+    -e USE_DDTRACE=true \
+    -p 4000:4000 \
+    ghcr.io/berriai/litellm:main-latest \
+    --config /app/config.yaml --detailed_debug
+```
+
+### Set DD variables (`DD_SERVICE` etc)
+
+LiteLLM supports customizing the following Datadog environment variables
+
+| Environment Variable | Description | Default Value | Required |
+|---------------------|-------------|---------------|----------|
+| `DD_API_KEY` | Your Datadog API key for authentication | None | ✅ Yes |
+| `DD_SITE` | Your Datadog site (e.g., "us5.datadoghq.com") | None | ✅ Yes |
+| `DD_ENV` | Environment tag for your logs (e.g., "production", "staging") | "unknown" | ❌ No |
+| `DD_SERVICE` | Service name for your logs | "litellm-server" | ❌ No |
+| `DD_SOURCE` | Source name for your logs | "litellm" | ❌ No |
+| `DD_VERSION` | Version tag for your logs | "unknown" | ❌ No |
+| `HOSTNAME` | Hostname tag for your logs | "" | ❌ No |
+| `POD_NAME` | Pod name tag (useful for Kubernetes deployments) | "unknown" | ❌ No |
+
+
+## Lunary
+#### Step1: Install dependencies and set your environment variables 
+Install the dependencies
+```shell
+pip install litellm lunary
+```
+
+Get you Lunary public key from from https://app.lunary.ai/settings 
+```shell
+export LUNARY_PUBLIC_KEY="<your-public-key>"
+```
+
+#### Step 2: Create a `config.yaml` and set `lunary` callbacks
+
+```yaml
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: "*"
+litellm_settings:
+  success_callback: ["lunary"]
+  failure_callback: ["lunary"]
+```
+
+#### Step 3: Start the LiteLLM proxy
+```shell
+litellm --config config.yaml
+```
+
+#### Step 4: Make a request
+
+```shell
+curl -X POST 'http://0.0.0.0:4000/chat/completions' \
+-H 'Content-Type: application/json' \
+-d '{
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful math tutor. Guide the user through the solution step by step."
+      },
+      {
+        "role": "user",
+        "content": "how can I solve 8x + 7 = -23"
+      }
+    ]
+}'
+```
+
+## MLflow
+
+
+#### Step1: Install dependencies
+Install the dependencies.
+
+```shell
+pip install litellm mlflow
+```
+
+#### Step 2: Create a `config.yaml` with `mlflow` callback
+
+```yaml
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: "*"
+litellm_settings:
+  success_callback: ["mlflow"]
+  failure_callback: ["mlflow"]
+```
+
+#### Step 3: Start the LiteLLM proxy
+```shell
+litellm --config config.yaml
+```
+
+#### Step 4: Make a request
+
+```shell
+curl -X POST 'http://0.0.0.0:4000/chat/completions' \
+-H 'Content-Type: application/json' \
+-d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the capital of France?"
+      }
+    ]
+}'
+```
+
+#### Step 5: Review traces
+
+Run the following command to start MLflow UI and review recorded traces.
+
+```shell
+mlflow ui
+```
+
+
 
 ## Custom Callback Class [Async]
 
@@ -891,9 +1585,6 @@ class MyCustomHandler(CustomLogger):
     
     def log_post_api_call(self, kwargs, response_obj, start_time, end_time): 
         print(f"Post-API Call")
-
-    def log_stream_event(self, kwargs, response_obj, start_time, end_time):
-        print(f"On Stream")
         
     def log_success_event(self, kwargs, response_obj, start_time, end_time): 
         print("On Success")
@@ -1095,7 +1786,7 @@ class MyCustomHandler(CustomLogger):
 {'mode': 'embedding', 'input_cost_per_token': 0.002}
 ```
 
-### Logging responses from proxy
+##### Logging responses from proxy
 
 Both `/chat/completions` and `/embeddings` responses are available as `response_obj`
 
@@ -1413,7 +2104,7 @@ export GALILEO_USERNAME=""
 export GALILEO_PASSWORD=""
 ```
 
-### Quick Start 
+#### Quick Start 
 
 1. Add to Config.yaml
 
@@ -1454,7 +2145,7 @@ curl --location 'http://0.0.0.0:4000/chat/completions' \
 
 🎉 That's it - Expect to see your Logs on your Galileo Dashboard
 
-## Logging Proxy Cost + Usage - OpenMeter
+## OpenMeter
 
 Bill customers according to their LLM API usage with [OpenMeter](../observability/openmeter.md)
 
@@ -1466,7 +2157,7 @@ export OPENMETER_API_ENDPOINT="" # defaults to https://openmeter.cloud
 export OPENMETER_API_KEY=""
 ```
 
-### Quick Start 
+##### Quick Start 
 
 1. Add to Config.yaml
 
@@ -1506,83 +2197,6 @@ curl --location 'http://0.0.0.0:4000/chat/completions' \
 ```
 
 <Image img={require('../../img/openmeter_img_2.png')} />
-
-## DataDog
-
-LiteLLM Supports logging to the following Datdog Integrations:
-- `datadog` [Datadog Logs](https://docs.datadoghq.com/logs/)
-- `datadog_llm_observability` [Datadog LLM Observability](https://www.datadoghq.com/product/llm-observability/)
-
-<Tabs>
-<TabItem value="datadog" label="Datadog Logs">
-
-We will use the `--config` to set `litellm.success_callback = ["datadog"]` this will log all successfull LLM calls to DataDog
-
-**Step 1**: Create a `config.yaml` file and set `litellm_settings`: `success_callback`
-
-```yaml
-model_list:
- - model_name: gpt-3.5-turbo
-    litellm_params:
-      model: gpt-3.5-turbo
-litellm_settings:
-  success_callback: ["datadog"] # logs llm success logs on datadog
-  service_callback: ["datadog"] # logs redis, postgres failures on datadog
-```
-
-</TabItem>
-<TabItem value="datadog_llm_observability" label="Datadog LLM Observability">
-
-```yaml
-model_list:
- - model_name: gpt-3.5-turbo
-    litellm_params:
-      model: gpt-3.5-turbo
-litellm_settings:
-  callbacks: ["datadog_llm_observability"] # logs llm success logs on datadog
-```
-
-</TabItem>
-</Tabs>
-
-**Step 2**: Set Required env variables for datadog
-
-```shell
-DD_API_KEY="5f2d0f310***********" # your datadog API Key
-DD_SITE="us5.datadoghq.com"       # your datadog base url
-DD_SOURCE="litellm_dev"       # [OPTIONAL] your datadog source. use to differentiate dev vs. prod deployments
-```
-
-**Step 3**: Start the proxy, make a test request
-
-Start proxy
-
-```shell
-litellm --config config.yaml --debug
-```
-
-Test Request
-
-```shell
-curl --location 'http://0.0.0.0:4000/chat/completions' \
-    --header 'Content-Type: application/json' \
-    --data '{
-    "model": "gpt-3.5-turbo",
-    "messages": [
-        {
-        "role": "user",
-        "content": "what llm are you"
-        }
-    ],
-    "metadata": {
-        "your-custom-metadata": "custom-field",
-    }
-}'
-```
-
-Expected output on Datadog
-
-<Image img={require('../../img/dd_small1.png')} />
 
 ## DynamoDB
 
@@ -1799,7 +2413,10 @@ curl --location 'http://0.0.0.0:4000/chat/completions' \
     }'
 ```
 
-## (BETA) Moderation with Azure Content Safety
+
+<!-- ## (BETA) Moderation with Azure Content Safety
+
+Note: This page is for logging callbacks and this is a moderation service. Commenting until we found a better location for this.
 
 [Azure Content-Safety](https://azure.microsoft.com/en-us/products/ai-services/ai-content-safety) is a Microsoft Azure service that provides content moderation APIs to detect potential offensive, harmful, or risky content in text.
 
@@ -1884,4 +2501,4 @@ litellm_settings:
 :::info
 `thresholds` are not required by default, but you can tune the values to your needs.
 Default values is `4` for all categories
-:::
+::: -->

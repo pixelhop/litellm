@@ -1,14 +1,9 @@
 model_list:
   - model_name: fake-openai-endpoint
     litellm_params:
-      model: openai/fake
-      api_key: os.environ/OPENAI_API_KEY
+      model: openai/my-fake-model
+      api_key: my-fake-key
       api_base: https://exampleopenaiendpoint-production.up.railway.app/
-
-
-
 general_settings:
-  key_management_system: "aws_secret_manager" 
-  key_management_settings: 
-    store_virtual_keys: true
-    access_mode: "write_only"
+  store_model_in_db: true
+

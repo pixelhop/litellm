@@ -10,6 +10,35 @@ LiteLLM supports all anthropic models.
 - `claude-2.1`
 - `claude-instant-1.2`
 
+
+| Property | Details |
+|-------|-------|
+| Description | Claude is a highly performant, trustworthy, and intelligent AI platform built by Anthropic. Claude excels at tasks involving language, reasoning, analysis, coding, and more. |
+| Provider Route on LiteLLM | `anthropic/` (add this prefix to the model name, to route any requests to Anthropic - e.g. `anthropic/claude-3-5-sonnet-20240620`) |
+| Provider Doc | [Anthropic ↗](https://docs.anthropic.com/en/docs/build-with-claude/overview) |
+| API Endpoint for Provider | https://api.anthropic.com |
+| Supported Endpoints | `/chat/completions` |
+
+
+## Supported OpenAI Parameters
+
+Check this in code, [here](../completion/input.md#translated-openai-params)
+
+```
+"stream",
+"stop",
+"temperature",
+"top_p",
+"max_tokens",
+"max_completion_tokens",
+"tools",
+"tool_choice",
+"extra_headers",
+"parallel_tool_calls",
+"response_format",
+"user"
+```
+
 :::info
 
 Anthropic API fails requests when `max_tokens` are not passed. Due to this litellm passes `max_tokens=4096` when no `max_tokens` are passed.
@@ -958,6 +987,106 @@ curl http://0.0.0.0:4000/v1/chat/completions \
 </TabItem>
 </Tabs>
 
+## [BETA] Citations API 
+
+Pass `citations: {"enabled": true}` to Anthropic, to get citations on your document responses. 
+
+Note: This interface is in BETA. If you have feedback on how citations should be returned, please [tell us here](https://github.com/BerriAI/litellm/issues/7970#issuecomment-2644437943)
+
+<Tabs>
+<TabItem value="sdk" label="SDK">
+
+```python
+from litellm import completion
+
+resp = completion(
+    model="claude-3-5-sonnet-20241022",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "text",
+                        "media_type": "text/plain",
+                        "data": "The grass is green. The sky is blue.",
+                    },
+                    "title": "My Document",
+                    "context": "This is a trustworthy document.",
+                    "citations": {"enabled": True},
+                },
+                {
+                    "type": "text",
+                    "text": "What color is the grass and sky?",
+                },
+            ],
+        }
+    ],
+)
+
+citations = resp.choices[0].message.provider_specific_fields["citations"]
+
+assert citations is not None
+```
+
+</TabItem>
+<TabItem value="proxy" label="PROXY">
+
+1. Setup config.yaml
+
+```yaml
+model_list:
+    - model_name: anthropic-claude
+      litellm_params:
+        model: anthropic/claude-3-5-sonnet-20241022
+        api_key: os.environ/ANTHROPIC_API_KEY
+```
+
+2. Start proxy 
+
+```bash
+litellm --config /path/to/config.yaml
+
+# RUNNING on http://0.0.0.0:4000
+```
+
+3. Test it! 
+
+```bash
+curl -L -X POST 'http://0.0.0.0:4000/v1/chat/completions' \
+-H 'Content-Type: application/json' \
+-H 'Authorization: Bearer sk-1234' \
+-d '{
+  "model": "anthropic-claude",
+  "messages": [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "document",
+                "source": {
+                    "type": "text",
+                    "media_type": "text/plain",
+                    "data": "The grass is green. The sky is blue.",
+                },
+                "title": "My Document",
+                "context": "This is a trustworthy document.",
+                "citations": {"enabled": True},
+            },
+            {
+                "type": "text",
+                "text": "What color is the grass and sky?",
+            },
+        ],
+    }
+  ]
+}'
+```
+
+</TabItem>
+</Tabs>
+
 ## Usage - passing 'user_id' to Anthropic
 
 LiteLLM translates the OpenAI `user` param to Anthropic's `metadata[user_id]` param.
@@ -1006,20 +1135,3 @@ curl http://0.0.0.0:4000/v1/chat/completions \
 
 </TabItem>
 </Tabs>
-
-## All Supported OpenAI Params
-
-```
-"stream",
-"stop",
-"temperature",
-"top_p",
-"max_tokens",
-"max_completion_tokens",
-"tools",
-"tool_choice",
-"extra_headers",
-"parallel_tool_calls",
-"response_format",
-"user"
-```
